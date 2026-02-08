@@ -1,0 +1,20 @@
+[package]
+name = "tunnels"
+license = "MIT"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+iroh-lan = { git = "https://github.com/rustonbsd/iroh-lan.git", tag = "v1.0.0-rc2" }
+runas = "1"
+tokio = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1"
+self-runas = "0.1"
+
+[[bin]]
+name = "tunnels"
+test = false
+bench = false
+
