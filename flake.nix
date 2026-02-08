@@ -2,7 +2,7 @@
   description = "Tunnels - P2P VPN with DNS";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     crane = {
       url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -22,15 +22,12 @@
           overlays = [ (import rust-overlay) ];
         };
 
-        # Use rust-overlay for the toolchain
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-src" "rust-analyzer" ];
         };
 
-        # Crane library for Rust builds
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
-        # Common arguments for crane
         commonArgs = {
           src = craneLib.cleanCargoSource ./.;
           strictDeps = true;
@@ -40,17 +37,14 @@
           ];
         };
 
-        # Build dependencies separately for better caching
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
-        # Build the actual binary
         tunnels = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
         });
 
-        # NixOS integration test
-        # Note: Full peer discovery requires external DHT bootstrap nodes
-        # This test verifies basic service operation and DNS server functionality
+        # NOTE: requires internet access for DHT bootstrap,
+        # must run with `nix flake check --option sandbox false`
         nixosTest = pkgs.testers.runNixOSTest {
           name = "tunnels-smoke-test";
 
@@ -67,11 +61,14 @@
                 dnsPort = 6666;
               };
 
-              # Allow all traffic in test VMs
-              networking.firewall.enable = false;
+              # Enable internet access in test VM
+              networking = {
+                useDHCP = true;
+                firewall.enable = false;
+              };
 
               # Needed for testing
-              environment.systemPackages = [ pkgs.dig pkgs.iputils pkgs.netcat ];
+              environment.systemPackages = [ pkgs.dig pkgs.iputils pkgs.netcat pkgs.curl ];
             };
 
             node2 = { config, pkgs, ... }: {
@@ -86,37 +83,40 @@
                 dnsPort = 6666;
               };
 
-              networking.firewall.enable = false;
-              environment.systemPackages = [ pkgs.dig pkgs.iputils pkgs.netcat ];
+              # Enable internet access in test VM
+              networking = {
+                useDHCP = true;
+                firewall.enable = false;
+              };
+
+              environment.systemPackages = [ pkgs.dig pkgs.iputils pkgs.netcat pkgs.curl ];
             };
           };
 
           testScript = ''
             start_all()
 
-            # Wait for services to start
+            node1.wait_for_unit("network-online.target")
+            node2.wait_for_unit("network-online.target")
+
+            node1.succeed("dig +short google.com")
+            node1.succeed("ping -c 2 8.8.8.8")
+            node1.succeed("curl -I https://google.com")
+
             node1.wait_for_unit("tunnels.service")
             node2.wait_for_unit("tunnels.service")
 
-            # Wait for nodes to get VPN IPs
             node1.wait_for_console_text("Got VPN IP:")
             node2.wait_for_console_text("Got VPN IP:")
 
-            # Extract VPN IPs from logs
             node1_ip = node1.succeed("journalctl -u tunnels.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
             node2_ip = node2.succeed("journalctl -u tunnels.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
 
-            print(f"node1 VPN IP: {node1_ip}")
-            print(f"node2 VPN IP: {node2_ip}")
-
-            # Ping each other over the VPN
-            print("Testing connectivity: node1 -> node2")
             node1.succeed(f"ping -c 3 {node2_ip}")
-
-            print("Testing connectivity: node2 -> node1")
             node2.succeed(f"ping -c 3 {node1_ip}")
 
-            print("✓ VPN connectivity test passed!")
+            node1.succeed("ping -c 3 node2.tunnel.internal")
+            node2.succeed("ping -c 3 node1.tunnel.internal")
           '';
         };
 
@@ -152,7 +152,6 @@
         };
       }
     ) // {
-      # NixOS module available on all systems
       nixosModules.default = { config, lib, pkgs, ... }:
         let
           cfg = config.services.tunnels;
@@ -197,7 +196,7 @@
               description = "Port for the local DNS server";
             };
 
-            setupDnsResolution = lib.mkOption {
+            dns = lib.mkOption {
               type = lib.types.bool;
               default = true;
               description = "Automatically configure systemd-resolved and iptables for DNS resolution";
@@ -214,7 +213,7 @@
 
             systemd.services.tunnels = {
               description = "Tunnels P2P VPN";
-              after = [ "network-online.target" ];
+              after = [ "network-online.target" ] ++ lib.optional cfg.dns "systemd-resolved.service";
               wants = [ "network-online.target" ];
               wantedBy = [ "multi-user.target" ];
 
@@ -228,32 +227,34 @@
                     else cfg.password;
                 in "${cfg.package}/bin/tunnels -n ${cfg.networkName} -p ${passwordArg} --hostname ${cfg.hostname} --dns-port ${toString cfg.dnsPort}";
 
-                # Security hardening
-                NoNewPrivileges = false; # Need privileges for network setup
+                NoNewPrivileges = false;
                 PrivateTmp = true;
                 ProtectSystem = "strict";
                 ProtectHome = true;
-
-                # Capabilities needed for network operations
                 AmbientCapabilities = [ "CAP_NET_ADMIN" "CAP_NET_BIND_SERVICE" ];
                 CapabilityBoundingSet = [ "CAP_NET_ADMIN" "CAP_NET_BIND_SERVICE" ];
               };
             };
 
-            # Configure systemd-resolved for .tunnel.internal domains
-            services.resolved = lib.mkIf cfg.setupDnsResolution {
+            # services.resolved = lib.mkIf cfg.dns {
+            #   enable = true;
+            #   settings.Resolve = {
+            #     DNS = [ "127.0.0.1" ];
+            #     Domains = [ "~tunnel.internal" ];
+            #   };
+            # };
+
+            services.resolved = lib.mkIf cfg.dns {
               enable = true;
-              settings = {
-                Resolve = {
-                  Domains = [ "~tunnel.internal" ];
-                  FallbackDNS = [ "127.0.0.1" ];
-                };
-              };
+              domains = [ "~tunnel.internal" ];
+              extraConfig = ''
+                DNS=127.0.0.1
+                Domains=~tunnel.internal
+              '';
             };
 
-            # iptables rule to redirect port 53 to DNS port
-            networking.firewall.extraCommands = lib.mkIf cfg.setupDnsResolution ''
-              # Redirect local DNS queries (port 53) to tunnels DNS server
+
+            networking.firewall.extraCommands = lib.mkIf cfg.dns ''
               iptables -t nat -A OUTPUT -p udp --dport 53 -d 127.0.0.1 -j REDIRECT --to-port ${toString cfg.dnsPort}
             '';
           };
