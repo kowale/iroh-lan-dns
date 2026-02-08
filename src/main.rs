@@ -1,5 +1,18 @@
 use iroh_lan::{RouterIp, Network};
 use tokio::time::sleep;
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Network name
+    #[arg(short, long)]
+    name: String,
+
+    /// Network password
+    #[arg(short, long)]
+    password: String,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -8,12 +21,14 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let args = Args::parse();
+
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_thread_ids(true)
         .init();
 
-    let network = Network::new("tunnels", "1234").await?;
+    let network = Network::new(&args.name, &args.password).await?;
 
     while matches!(
         network.get_router_state().await?,
