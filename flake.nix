@@ -1,11 +1,8 @@
 {
-  description = "Tunnels - P2P VPN with DNS";
-
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     crane = {
       url = "github:ipetkov/crane";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay = {
@@ -15,10 +12,13 @@
   };
 
   outputs = { self, nixpkgs, crane, flake-utils, rust-overlay }:
-    flake-utils.lib.eachDefaultSystem (system:
+    flake-utils.lib.eachDefaultSystem (localSystem:
       let
+        # crossSystem = "aarch64-linux";
+        crossSystem = "x86_64-linux";
+
         pkgs = import nixpkgs {
-          inherit system;
+          inherit localSystem crossSystem;
           overlays = [ (import rust-overlay) ];
         };
 
@@ -28,80 +28,66 @@
 
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
-        commonArgs = {
+        tunnels = craneLib.buildPackage rec {
           src = craneLib.cleanCargoSource ./.;
           strictDeps = true;
           buildInputs = [ ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
             pkgs.darwin.apple_sdk.frameworks.Security
             pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
           ];
+          cargoArtifacts = craneLib.buildDepsOnly { inherit src strictDeps buildInputs; };
         };
 
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-
-        tunnels = craneLib.buildPackage (commonArgs // {
-          inherit cargoArtifacts;
-        });
-
-        # NOTE: requires internet access for DHT bootstrap,
+        # NOTE: requires internet access for DHT bootstrap so
         # must run with `nix flake check --option sandbox false`
         nixosTest = pkgs.testers.runNixOSTest {
           name = "tunnels-smoke-test";
 
-          nodes = {
-            node1 = { config, pkgs, ... }: {
-              imports = [ self.nixosModules.default ];
+          nodes = let
+            mkNode = cfg: { config, pkgs, lib, ... }: {
+              imports = [ self.nixosModules.default cfg ];
+              networking.useDHCP = true;
+              environment.systemPackages = [ pkgs.dig ];
+            };
 
+          in {
+            node1 = mkNode {
               services.tunnels = {
                 enable = true;
                 package = tunnels;
                 networkName = "testnet";
-                password = "testsecret";
+                password = "secret";
                 hostname = "node1";
                 dnsPort = 6666;
+                dns = true;
               };
-
-              # Enable internet access in test VM
-              networking = {
-                useDHCP = true;
-                firewall.enable = false;
-              };
-
-              # Needed for testing
-              environment.systemPackages = [ pkgs.dig pkgs.iputils pkgs.netcat pkgs.curl ];
             };
-
-            node2 = { config, pkgs, ... }: {
-              imports = [ self.nixosModules.default ];
-
+            node2 = mkNode {
               services.tunnels = {
                 enable = true;
                 package = tunnels;
                 networkName = "testnet";
-                password = "testsecret";
+                password = "secret";
                 hostname = "node2";
                 dnsPort = 6666;
+                dns = true;
               };
-
-              # Enable internet access in test VM
-              networking = {
-                useDHCP = true;
-                firewall.enable = false;
-              };
-
-              environment.systemPackages = [ pkgs.dig pkgs.iputils pkgs.netcat pkgs.curl ];
             };
           };
-
           testScript = ''
             start_all()
 
-            node1.wait_for_unit("network-online.target")
-            node2.wait_for_unit("network-online.target")
+            node1.wait_for_unit("coredns.service")
+            node2.wait_for_unit("coredns.service")
 
-            node1.succeed("dig +short google.com")
-            node1.succeed("ping -c 2 8.8.8.8")
-            node1.succeed("curl -I https://google.com")
+            print(node1.succeed("cat /etc/resolv.conf"))
+            print(node2.succeed("cat /etc/resolv.conf"))
+
+            node1.wait_until_succeeds("ping -c 1 8.8.8.8")
+            node2.wait_until_succeeds("ping -c 1 8.8.8.8")
+
+            node1.succeed("dig nixos.org")
+            node2.succeed("dig nixos.org")
 
             node1.wait_for_unit("tunnels.service")
             node2.wait_for_unit("tunnels.service")
@@ -112,11 +98,17 @@
             node1_ip = node1.succeed("journalctl -u tunnels.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
             node2_ip = node2.succeed("journalctl -u tunnels.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
 
-            node1.succeed(f"ping -c 3 {node2_ip}")
-            node2.succeed(f"ping -c 3 {node1_ip}")
+            node1.wait_until_succeeds(f"ping -c 1 {node2_ip}")
+            node2.wait_until_succeeds(f"ping -c 1 {node1_ip}")
 
-            node1.succeed("ping -c 3 node2.tunnel.internal")
-            node2.succeed("ping -c 3 node1.tunnel.internal")
+            node1.succeed("dig @127.0.0.1 -p 6666 node2.tunnel.internal")
+            node2.succeed("dig @127.0.0.1 -p 6666 node1.tunnel.internal")
+
+            node1.succeed("dig @127.0.0.1 node1.tunnel.internal")
+            node2.succeed("dig @127.0.0.1 node2.tunnel.internal")
+
+            node1.succeed("dig node1.tunnel.internal")
+            node2.succeed("dig node2.tunnel.internal")
           '';
         };
 
@@ -158,7 +150,7 @@
         in
         {
           options.services.tunnels = {
-            enable = lib.mkEnableOption "tunnels P2P VPN service";
+            enable = lib.mkEnableOption "tunnels = iroh-lan + dns";
 
             package = lib.mkOption {
               type = lib.types.package;
@@ -175,19 +167,19 @@
             password = lib.mkOption {
               type = lib.types.str;
               description = "Network password (consider using passwordFile instead)";
-              default = "";
+              default = null;
             };
 
             passwordFile = lib.mkOption {
               type = lib.types.nullOr lib.types.path;
-              default = null;
               description = "Path to file containing the network password";
+              default = null;
             };
 
             hostname = lib.mkOption {
               type = lib.types.str;
               default = config.networking.hostName;
-              description = "Hostname to announce on the VPN";
+              description = "Hostname to announce";
             };
 
             dnsPort = lib.mkOption {
@@ -199,7 +191,7 @@
             dns = lib.mkOption {
               type = lib.types.bool;
               default = true;
-              description = "Automatically configure systemd-resolved and iptables for DNS resolution";
+              description = "Local resolution with resolv.conf";
             };
           };
 
@@ -212,8 +204,8 @@
             ];
 
             systemd.services.tunnels = {
-              description = "Tunnels P2P VPN";
-              after = [ "network-online.target" ] ++ lib.optional cfg.dns "systemd-resolved.service";
+              description = "iroh-lan + dns";
+              after = [ "network-online.target" ];
               wants = [ "network-online.target" ];
               wantedBy = [ "multi-user.target" ];
 
@@ -221,11 +213,14 @@
                 Type = "simple";
                 Restart = "on-failure";
                 RestartSec = "10s";
+
                 ExecStart = let
                   passwordArg = if cfg.passwordFile != null
                     then "$(cat ${cfg.passwordFile})"
                     else cfg.password;
-                in "${cfg.package}/bin/tunnels -n ${cfg.networkName} -p ${passwordArg} --hostname ${cfg.hostname} --dns-port ${toString cfg.dnsPort}";
+                in ''
+                  ${cfg.package}/bin/tunnels --name ${cfg.networkName} --password ${passwordArg} --hostname ${cfg.hostname} --dns-port ${toString cfg.dnsPort}
+                '';
 
                 NoNewPrivileges = false;
                 PrivateTmp = true;
@@ -236,27 +231,22 @@
               };
             };
 
-            # services.resolved = lib.mkIf cfg.dns {
-            #   enable = true;
-            #   settings.Resolve = {
-            #     DNS = [ "127.0.0.1" ];
-            #     Domains = [ "~tunnel.internal" ];
-            #   };
-            # };
+            networking.nameservers = lib.mkIf cfg.dns [ "127.0.0.1" ];
+            networking.resolvconf.enable = lib.mkIf cfg.dns true;
 
-            services.resolved = lib.mkIf cfg.dns {
+            services.coredns = lib.mkIf cfg.dns {
               enable = true;
-              domains = [ "~tunnel.internal" ];
-              extraConfig = ''
-                DNS=127.0.0.1
-                Domains=~tunnel.internal
+              config = ''
+                .:53 {
+                  bind 127.0.0.1
+                  forward tunnel.internal 127.0.0.1:${toString cfg.dnsPort}
+                  forward . 8.8.8.8 1.1.1.1
+                  cache 30
+                  log
+                  errors
+                }
               '';
             };
-
-
-            networking.firewall.extraCommands = lib.mkIf cfg.dns ''
-              iptables -t nat -A OUTPUT -p udp --dport 53 -d 127.0.0.1 -j REDIRECT --to-port ${toString cfg.dnsPort}
-            '';
           };
         };
     };
