@@ -101,8 +101,8 @@
             node1.wait_until_succeeds(f"ping -c 1 {node2_ip}")
             node2.wait_until_succeeds(f"ping -c 1 {node1_ip}")
 
-            node1.succeed("dig @127.0.0.1 -p 6666 node2.tunnel.internal")
-            node2.succeed("dig @127.0.0.1 -p 6666 node1.tunnel.internal")
+            node1.wait_until_succeeds("dig @127.0.0.1 -p 6666 node2.tunnel.internal")
+            node2.wait_until_succeeds("dig @127.0.0.1 -p 6666 node1.tunnel.internal")
 
             node1.succeed("dig @127.0.0.1 node1.tunnel.internal")
             node2.succeed("dig @127.0.0.1 node2.tunnel.internal")

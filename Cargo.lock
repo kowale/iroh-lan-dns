@@ -5177,11 +5177,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "hickory-proto",
  "iroh-lan",
  "runas",
  "self-runas",
- "serde",
- "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
