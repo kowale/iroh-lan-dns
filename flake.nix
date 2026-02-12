@@ -14,7 +14,7 @@
   outputs = { self, nixpkgs, crane, flake-utils, rust-overlay }:
     flake-utils.lib.eachDefaultSystem (localSystem:
       let
-        # crossSystem = "aarch64-linux";
+        # TODO: build for more platforms
         crossSystem = "x86_64-linux";
 
         pkgs = import nixpkgs {
@@ -47,6 +47,11 @@
             mkNode = cfg: { config, pkgs, lib, ... }: {
               imports = [ self.nixosModules.default cfg ];
               networking.useDHCP = true;
+              networking.resolvconf.enable = true;
+
+              # NOTE: if using systemd-networkd, you need systemd-resolved instead
+              # services.resolved.enable = true;
+
               environment.systemPackages = [ pkgs.dig ];
             };
 
@@ -232,7 +237,6 @@
             };
 
             networking.nameservers = lib.mkIf cfg.dns [ "127.0.0.1" ];
-            networking.resolvconf.enable = lib.mkIf cfg.dns true;
 
             services.coredns = lib.mkIf cfg.dns {
               enable = true;
