@@ -1,7 +1,7 @@
 # iroh-lan-dns
 
 Wrapper around excellent [iroh-lan](https://github.com/rustonbsd/iroh-lan)
-which adds an embedded DNS server with hostname announcements
+that adds an embedded DNS server with hostname announcements
 and NixOS module to keep it running and configure local DNS resolution.
 
 ## NixOS
@@ -10,12 +10,11 @@ and NixOS module to keep it running and configure local DNS resolution.
 {
   services.iroh-lan-dns = {
     enable = true;
-    package = iroh-lan-dns;
     network = "testnet";
     password = "secret";
-    hostName = "hi";
+    hostName = config.networking.hostName;
     dnsPort = 6666;
-    setupDns = true; # this is quite invasive, leave it false if you handle your own DNS
+    setupDns = true; # leave false if you handle your own DNS
   };
 }
 ```
@@ -63,3 +62,4 @@ cargo run -- --network testnet --password secret --hostname hi --dns-port 53
 Add-DnsClientNrptRule -Namespace "internal" -NameServers "127.0.0.1"
 Get-DnsClientNrptRule | Where-Object {$_.Namespace -eq "internal"}
 ```
+
