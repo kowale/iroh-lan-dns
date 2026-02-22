@@ -13,7 +13,7 @@ use tracing::{debug, info, warn};
 #[derive(Parser)]
 struct Args {
     #[arg(short, long)]
-    name: String,
+    network: String,
 
     #[arg(short, long)]
     password: String,
@@ -21,7 +21,7 @@ struct Args {
     #[arg(long)]
     hostname: String,
 
-    #[arg(long, default_value = "5353")]
+    #[arg(long, default_value = "6666")]
     dns_port: u16,
 }
 
@@ -39,16 +39,16 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    eprintln!("Network: {}", args.name);
+    eprintln!("Network: {}", args.network);
     eprintln!("Hostname: {}", args.hostname);
     eprintln!("Joining network...");
 
     // Join network
     eprintln!("Connecting to iroh-lan network...");
-    let network = Network::new(&args.name, &args.password).await?;
+    let network = Network::new(&args.network, &args.password).await?;
     eprintln!("Network joined, waiting for IP...");
     let my_ip = wait_for_ip(&network).await?;
-    eprintln!("Got VPN IP: {}", my_ip);
+    eprintln!("Got IP: {}", my_ip);
 
     // Start DNS server
     let dns = Dns::new();
@@ -64,14 +64,8 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Wait a moment for DNS to start
     sleep(Duration::from_millis(100)).await;
 
-    info!("\n=== Ready ===");
-    info!("DNS: 127.0.0.1:{}", args.dns_port);
-    info!("Test: dig @127.0.0.1 -p {} {}", args.dns_port, full_hostname);
-
-    // Hostname exchange via plain UDP over the VPN
     let sock = Arc::new(UdpSocket::bind((my_ip, 53535)).await?);
     info!("Hostname exchange listening on {}:53535", my_ip);
 

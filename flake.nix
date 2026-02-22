@@ -62,9 +62,9 @@
                 package = iroh-lan-dns;
                 networkName = "testnet";
                 password = "secret";
-                hostname = "node1";
+                hostName = "node1";
                 dnsPort = 6666;
-                dns = true;
+                setupDns = true;
               };
             };
             node2 = mkNode {
@@ -73,9 +73,9 @@
                 package = iroh-lan-dns;
                 networkName = "testnet";
                 password = "secret";
-                hostname = "node2";
+                hostName = "node2";
                 dnsPort = 6666;
-                dns = true;
+                setupDns = true;
               };
             };
           };
@@ -84,9 +84,6 @@
 
             node1.wait_for_unit("coredns.service")
             node2.wait_for_unit("coredns.service")
-
-            print(node1.succeed("cat /etc/resolv.conf"))
-            print(node2.succeed("cat /etc/resolv.conf"))
 
             node1.wait_until_succeeds("ping -c 1 8.8.8.8")
             node2.wait_until_succeeds("ping -c 1 8.8.8.8")
@@ -97,11 +94,11 @@
             node1.wait_for_unit("iroh-lan-dns.service")
             node2.wait_for_unit("iroh-lan-dns.service")
 
-            node1.wait_for_console_text("Got VPN IP:")
-            node2.wait_for_console_text("Got VPN IP:")
+            node1.wait_for_console_text("Got IP:")
+            node2.wait_for_console_text("Got IP:")
 
-            node1_ip = node1.succeed("journalctl -u iroh-lan-dns.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
-            node2_ip = node2.succeed("journalctl -u iroh-lan-dns.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
+            node1_ip = node1.succeed("journalctl -u iroh-lan-dns.service | grep 'Got IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
+            node2_ip = node2.succeed("journalctl -u iroh-lan-dns.service | grep 'Got IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
 
             node1.wait_until_succeeds(f"ping -c 1 {node2_ip}")
             node2.wait_until_succeeds(f"ping -c 1 {node1_ip}")
@@ -181,7 +178,7 @@
               default = null;
             };
 
-            hostname = lib.mkOption {
+            hostName = lib.mkOption {
               type = lib.types.str;
               default = config.networking.hostName;
               description = "Hostname to announce";
@@ -193,10 +190,10 @@
               description = "Port for the local DNS server";
             };
 
-            dns = lib.mkOption {
+            setupDns = lib.mkOption {
               type = lib.types.bool;
-              default = true;
-              description = "Local resolution with resolv.conf";
+              default = false;
+              description = "Setup local CoreDNS and add it to nameservers";
             };
           };
 
@@ -204,9 +201,16 @@
             assertions = [
               {
                 assertion = cfg.password != "" || cfg.passwordFile != null;
-                message = "services.iroh-lan-dns requires either password or passwordFile to be set";
+                message = "iroh-lan-dns: you must specify either password or passwordFile to be set";
+              }
+              {
+                assertion = cfg.setupDns -> config.networking.resolvconf.enable || config.services.resolved.enable;
+                message = "iroh-lan-dns: you must enable either networking.resolvconf or services.resolved";
               }
             ];
+
+            warnings = lib.optionals (config.services.iroh-lan-dns.password != null)
+              [ "this password will be readable in Nix store, consider using passwordFile" ];
 
             systemd.services.iroh-lan-dns = {
               description = "iroh-lan + dns";
@@ -214,9 +218,14 @@
               wants = [ "network-online.target" ];
               wantedBy = [ "multi-user.target" ];
 
+              unitConfig = {
+                StartLimitIntervalSec = 0;
+                StartLimitBurst = 0;
+              };
+
               serviceConfig = {
                 Type = "simple";
-                Restart = "on-failure";
+                Restart = "always";
                 RestartSec = "10s";
 
                 ExecStart = let
@@ -224,7 +233,7 @@
                     then "$(cat ${cfg.passwordFile})"
                     else cfg.password;
                 in ''
-                  ${cfg.package}/bin/iroh-lan-dns --name ${cfg.networkName} --password ${passwordArg} --hostname ${cfg.hostname} --dns-port ${toString cfg.dnsPort}
+                  ${cfg.package}/bin/iroh-lan-dns --network ${cfg.networkName} --password ${passwordArg} --hostname ${cfg.hostName} --dns-port ${toString cfg.dnsPort}
                 '';
 
                 NoNewPrivileges = false;
@@ -236,9 +245,13 @@
               };
             };
 
-            networking.nameservers = lib.mkIf cfg.dns [ "127.0.0.1" ];
+            services.udev.extraRules = ''
+              ACTION=="remove", SUBSYSTEM=="net", KERNEL=="tun*", RUN+="${pkgs.systemd}/bin/systemctl restart iroh-lan-dns.service"
+            '';
 
-            services.coredns = lib.mkIf cfg.dns {
+            networking.nameservers = lib.mkIf cfg.setupDns [ "127.0.0.1" ];
+
+            services.coredns = lib.mkIf cfg.setupDns {
               enable = true;
               config = ''
                 .:53 {

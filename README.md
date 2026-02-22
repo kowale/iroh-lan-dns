@@ -7,12 +7,12 @@ NixOS module to configure local resolution, and some retry logic.
 You can use Nix
 
 ```
-nix run . -- --name network --password secret --hostname node --dns-port 6666
+nix run . -- --network testnet --password secret --hostname hi --dns-port 6666
 ```
 or Cargo
 
 ```
-cargo run -- --name network --password secret --hostname node --dns-port 6666
+cargo run -- --network testnet --password secret --hostname hi --dns-port 6666
 ```
 
 or NixOS module (preferred)
@@ -22,11 +22,11 @@ or NixOS module (preferred)
   services.iroh-lan-dns = {
     enable = true;
     package = iroh-lan-dns;
-    networkName = "testnet";
+    network = "testnet";
     password = "secret";
-    hostname = "node1";
+    hostName = "hi";
     dnsPort = 6666;
-    dns = true; # this is quite invasive, disable if you handle your own DNS
+    setupDns = true; # this is quite invasive, leave it false if you handle your own DNS
   };
 }
 ```
