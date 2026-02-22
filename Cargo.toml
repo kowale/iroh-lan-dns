@@ -1,5 +1,5 @@
 [package]
-name = "tunnels"
+name = "iroh-lan-dns"
 license = "MIT"
 version = "0.1.0"
 edition = "2024"
@@ -16,7 +16,7 @@ clap = { version = "4", features = ["derive"] }
 hickory-proto = "0.25"
 
 [[bin]]
-name = "tunnels"
+name = "iroh-lan-dns"
 test = false
 bench = false
 

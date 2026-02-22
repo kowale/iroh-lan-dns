@@ -28,7 +28,7 @@
 
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
-        tunnels = craneLib.buildPackage rec {
+        iroh-lan-dns = craneLib.buildPackage rec {
           src = craneLib.cleanCargoSource ./.;
           strictDeps = true;
           buildInputs = [ ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
@@ -41,7 +41,7 @@
         # NOTE: requires internet access for DHT bootstrap so
         # must run with `nix flake check --option sandbox false`
         nixosTest = pkgs.testers.runNixOSTest {
-          name = "tunnels-smoke-test";
+          name = "iroh-lan-dns-smoke-test";
 
           nodes = let
             mkNode = cfg: { config, pkgs, lib, ... }: {
@@ -57,9 +57,9 @@
 
           in {
             node1 = mkNode {
-              services.tunnels = {
+              services.iroh-lan-dns = {
                 enable = true;
-                package = tunnels;
+                package = iroh-lan-dns;
                 networkName = "testnet";
                 password = "secret";
                 hostname = "node1";
@@ -68,9 +68,9 @@
               };
             };
             node2 = mkNode {
-              services.tunnels = {
+              services.iroh-lan-dns = {
                 enable = true;
-                package = tunnels;
+                package = iroh-lan-dns;
                 networkName = "testnet";
                 password = "secret";
                 hostname = "node2";
@@ -94,44 +94,44 @@
             node1.succeed("dig nixos.org")
             node2.succeed("dig nixos.org")
 
-            node1.wait_for_unit("tunnels.service")
-            node2.wait_for_unit("tunnels.service")
+            node1.wait_for_unit("iroh-lan-dns.service")
+            node2.wait_for_unit("iroh-lan-dns.service")
 
             node1.wait_for_console_text("Got VPN IP:")
             node2.wait_for_console_text("Got VPN IP:")
 
-            node1_ip = node1.succeed("journalctl -u tunnels.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
-            node2_ip = node2.succeed("journalctl -u tunnels.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
+            node1_ip = node1.succeed("journalctl -u iroh-lan-dns.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
+            node2_ip = node2.succeed("journalctl -u iroh-lan-dns.service | grep 'Got VPN IP:' | tail -1 | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+'").strip()
 
             node1.wait_until_succeeds(f"ping -c 1 {node2_ip}")
             node2.wait_until_succeeds(f"ping -c 1 {node1_ip}")
 
-            node1.wait_until_succeeds("dig @127.0.0.1 -p 6666 node2.tunnel.internal")
-            node2.wait_until_succeeds("dig @127.0.0.1 -p 6666 node1.tunnel.internal")
+            node1.wait_until_succeeds("dig @127.0.0.1 -p 6666 node2.internal")
+            node2.wait_until_succeeds("dig @127.0.0.1 -p 6666 node1.internal")
 
-            node1.succeed("dig @127.0.0.1 node1.tunnel.internal")
-            node2.succeed("dig @127.0.0.1 node2.tunnel.internal")
+            node1.succeed("dig @127.0.0.1 node1.internal")
+            node2.succeed("dig @127.0.0.1 node2.internal")
 
-            node1.succeed("dig node1.tunnel.internal")
-            node2.succeed("dig node2.tunnel.internal")
+            node1.succeed("dig node1.internal")
+            node2.succeed("dig node2.internal")
           '';
         };
 
       in
       {
         checks = {
-          inherit tunnels;
+          inherit iroh-lan-dns;
           integration-test = nixosTest;
         };
 
         packages = {
-          default = tunnels;
-          inherit tunnels;
+          default = iroh-lan-dns;
+          inherit iroh-lan-dns;
           test = nixosTest.driver;
         };
 
         apps.default = flake-utils.lib.mkApp {
-          drv = tunnels;
+          drv = iroh-lan-dns;
         };
 
         devShells.default = craneLib.devShell {
@@ -151,16 +151,16 @@
     ) // {
       nixosModules.default = { config, lib, pkgs, ... }:
         let
-          cfg = config.services.tunnels;
+          cfg = config.services.iroh-lan-dns;
         in
         {
-          options.services.tunnels = {
-            enable = lib.mkEnableOption "tunnels = iroh-lan + dns";
+          options.services.iroh-lan-dns = {
+            enable = lib.mkEnableOption "iroh-lan-dns = iroh-lan + dns";
 
             package = lib.mkOption {
               type = lib.types.package;
               default = self.packages.${pkgs.system}.default;
-              description = "The tunnels package to use";
+              description = "The iroh-lan-dns package to use";
             };
 
             networkName = lib.mkOption {
@@ -204,11 +204,11 @@
             assertions = [
               {
                 assertion = cfg.password != "" || cfg.passwordFile != null;
-                message = "services.tunnels requires either password or passwordFile to be set";
+                message = "services.iroh-lan-dns requires either password or passwordFile to be set";
               }
             ];
 
-            systemd.services.tunnels = {
+            systemd.services.iroh-lan-dns = {
               description = "iroh-lan + dns";
               after = [ "network-online.target" ];
               wants = [ "network-online.target" ];
@@ -224,7 +224,7 @@
                     then "$(cat ${cfg.passwordFile})"
                     else cfg.password;
                 in ''
-                  ${cfg.package}/bin/tunnels --name ${cfg.networkName} --password ${passwordArg} --hostname ${cfg.hostname} --dns-port ${toString cfg.dnsPort}
+                  ${cfg.package}/bin/iroh-lan-dns --name ${cfg.networkName} --password ${passwordArg} --hostname ${cfg.hostname} --dns-port ${toString cfg.dnsPort}
                 '';
 
                 NoNewPrivileges = false;
@@ -243,7 +243,7 @@
               config = ''
                 .:53 {
                   bind 127.0.0.1
-                  forward tunnel.internal 127.0.0.1:${toString cfg.dnsPort}
+                  forward internal 127.0.0.1:${toString cfg.dnsPort}
                   forward . 8.8.8.8 1.1.1.1
                   cache 30
                   log

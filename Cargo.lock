@@ -5172,7 +5172,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tunnels"
+name = "iroh-lan-dns"
 version = "0.1.0"
 dependencies = [
  "anyhow",

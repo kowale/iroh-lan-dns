@@ -39,7 +39,6 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    eprintln!("=== Tunnels Starting ===");
     eprintln!("Network: {}", args.name);
     eprintln!("Hostname: {}", args.hostname);
     eprintln!("Joining network...");
@@ -53,7 +52,7 @@ async fn main() -> Result<()> {
 
     // Start DNS server
     let dns = Dns::new();
-    let full_hostname = format!("{}.tunnel.internal", args.hostname);
+    let full_hostname = format!("{}.internal", args.hostname);
     dns.add(full_hostname.clone(), my_ip).await;
 
     tokio::spawn({
@@ -90,7 +89,7 @@ async fn main() -> Result<()> {
                                 std::net::IpAddr::V4(ip) => ip,
                                 _ => continue,
                             };
-                            let fqdn = format!("{}.tunnel.internal", hostname);
+                            let fqdn = format!("{}.internal", hostname);
                             info!("Peer announced: {} -> {}", fqdn, peer_ip);
                             dns.add(fqdn, peer_ip).await;
                         }

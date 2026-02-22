@@ -1,19 +1,25 @@
-# Tunnels
+# iroh-lan-dns
 
-We can build with nix
+Wrapper around excellent [iroh-lan](https://github.com/rustonbsd/iroh-lan)
+which adds a small DNS server similar to MagicDNS in Tailscale,
+NixOS module to configure local resolution, and some retry logic.
+
+We can build with Nix
 
 ```
 nix build
-./result/bin/tunnels --name network --password secret --hostname node --dns-port 6666
+./result/bin/iroh-lan-dns --name network --password secret --hostname node --dns-port 6666
 ```
-
-or with cargo
+or Cargo
 
 ```
 cargo run -- --name network --password secret --hostname node --dns-port 6666
 ```
 
-We will use systemd-resolved for local DNS,
+## Local DNS resolution
+
+Skip this step if using the NixOS module.
+We can use systemd-resolved for local DNS,
 so we must need to forward to port 53
 
 ```
@@ -26,10 +32,10 @@ we also need the resolved config itself, something like this
 {
   services.resolved = {
     enable = true;
-    domains = [ "~tunnel.internal" ];
+    domains = [ "~internal" ];
     extraConfig = ''
       DNS=127.0.0.1
-      Domains=~tunnel.internal
+      Domains=~internal
     '';
   };
 }
