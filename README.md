@@ -1,21 +1,10 @@
 # iroh-lan-dns
 
 Wrapper around excellent [iroh-lan](https://github.com/rustonbsd/iroh-lan)
-which adds a small DNS server similar to MagicDNS in Tailscale,
-NixOS module to configure local resolution, and some retry logic.
+which adds an embedded DNS server with hostname announcements
+and NixOS module to keep it running and configure local DNS resolution.
 
-You can use Nix
-
-```
-nix run . -- --network testnet --password secret --hostname hi --dns-port 6666
-```
-or Cargo
-
-```
-cargo run -- --network testnet --password secret --hostname hi --dns-port 6666
-```
-
-or NixOS module (preferred)
+## NixOS
 
 ```nix
 {
@@ -38,28 +27,39 @@ I am looking into how to self-host iroh discovery so this can run in sandbox.
 nix flake check -L --option sandbox false
 ```
 
-## Local DNS resolution
-
-Skip this step if using the NixOS module.
-We can use systemd-resolved for local DNS,
-so we must need to forward to port 53
+You can also run two instances (with different hostnames and ports) to see it in action
 
 ```
+# in one terminal
+sudo nix run . -- --network testnet --password secret --hostname hi --dns-port 6667
+
+# in another terminal
+sudo nix run . -- --network testnet --password secret --hostname hello --dns-port 6668
+```
+
+## Linux (including NixOS)
+
+```
+cargo run -- --network testnet --password secret --hostname hi --dns-port 6666
 sudo iptables -t nat -A OUTPUT -p udp --dport 53 -d 127.0.0.1 -j REDIRECT --to-port 6666
+# TODO: resolv.conf or systemd-resolved
 ```
 
-we also need the resolved config itself, something like this
+## MacOS
 
-```nix
-{
-  services.resolved = {
-    enable = true;
-    domains = [ "~internal" ];
-    extraConfig = ''
-      DNS=127.0.0.1
-      Domains=~internal
-    '';
-  };
-}
+```
+sudo mkdir -p /etc/resolver/internal
+echo "nameserver 127.0.0.1" >> /etc/resolver/internal
+sudo cargo run -- --network testnet --password secret --hostname hi --dns-port 53
 ```
 
+- <https://invisiblethreat.ca/technology/2025/04/12/macos-resolvers/>
+- <https://vninja.net/2020/02/06/macos-custom-dns-resolvers/>
+
+## Windows
+
+```powershell
+cargo run -- --network testnet --password secret --hostname hi --dns-port 53
+Add-DnsClientNrptRule -Namespace "internal" -NameServers "127.0.0.1"
+Get-DnsClientNrptRule | Where-Object {$_.Namespace -eq "internal"}
+```
