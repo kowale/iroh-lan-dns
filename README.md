@@ -4,16 +4,38 @@ Wrapper around excellent [iroh-lan](https://github.com/rustonbsd/iroh-lan)
 which adds a small DNS server similar to MagicDNS in Tailscale,
 NixOS module to configure local resolution, and some retry logic.
 
-We can build with Nix
+You can use Nix
 
 ```
-nix build
-./result/bin/iroh-lan-dns --name network --password secret --hostname node --dns-port 6666
+nix run . -- --name network --password secret --hostname node --dns-port 6666
 ```
 or Cargo
 
 ```
 cargo run -- --name network --password secret --hostname node --dns-port 6666
+```
+
+or NixOS module (preferred)
+
+```nix
+{
+  services.iroh-lan-dns = {
+    enable = true;
+    package = iroh-lan-dns;
+    networkName = "testnet";
+    password = "secret";
+    hostname = "node1";
+    dnsPort = 6666;
+    dns = true; # this is quite invasive, disable if you handle your own DNS
+  };
+}
+```
+
+You can also run a NixOS VM test, but you need to disable sandbox for now;
+I am looking into how to self-host iroh discovery so this can run in sandbox.
+
+```
+nix flake check -L --option sandbox false
 ```
 
 ## Local DNS resolution
