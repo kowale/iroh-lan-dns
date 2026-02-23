@@ -60,7 +60,7 @@
               services.iroh-lan-dns = {
                 enable = true;
                 package = iroh-lan-dns;
-                networkName = "testnet";
+                network = "testnet";
                 password = "secret";
                 hostName = "node1";
                 dnsPort = 6666;
@@ -71,7 +71,7 @@
               services.iroh-lan-dns = {
                 enable = true;
                 package = iroh-lan-dns;
-                networkName = "testnet";
+                network = "testnet";
                 password = "secret";
                 hostName = "node2";
                 dnsPort = 6666;
@@ -160,7 +160,7 @@
               description = "The iroh-lan-dns package to use";
             };
 
-            networkName = lib.mkOption {
+            network = lib.mkOption {
               type = lib.types.str;
               example = "mynet";
               description = "Network name for the VPN";
@@ -233,7 +233,7 @@
                     then "$(cat ${cfg.passwordFile})"
                     else cfg.password;
                 in ''
-                  ${cfg.package}/bin/iroh-lan-dns --network ${cfg.networkName} --password ${passwordArg} --hostname ${cfg.hostName} --dns-port ${toString cfg.dnsPort}
+                  ${cfg.package}/bin/iroh-lan-dns --network ${cfg.network} --password ${passwordArg} --hostname ${cfg.hostName} --dns-port ${toString cfg.dnsPort}
                 '';
 
                 NoNewPrivileges = false;
