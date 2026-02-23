@@ -30,10 +30,10 @@ You can also run two instances (with different hostnames and ports) to see it in
 
 ```
 # in one terminal
-sudo nix run . -- --network testnet --password secret --hostname hi --dns-port 6667
+nix run . -- --network testnet --password secret --hostname hi --dns-port 6667
 
 # in another terminal
-sudo nix run . -- --network testnet --password secret --hostname hello --dns-port 6668
+nix run . -- --network testnet --password secret --hostname hello --dns-port 6668
 ```
 
 ## Linux (including NixOS)
