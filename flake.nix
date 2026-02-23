@@ -59,22 +59,16 @@
             node1 = mkNode {
               services.iroh-lan-dns = {
                 enable = true;
-                package = iroh-lan-dns;
                 network = "testnet";
                 password = "secret";
-                hostName = "node1";
-                dnsPort = 6666;
                 setupDns = true;
               };
             };
             node2 = mkNode {
               services.iroh-lan-dns = {
                 enable = true;
-                package = iroh-lan-dns;
                 network = "testnet";
                 password = "secret";
-                hostName = "node2";
-                dnsPort = 6666;
                 setupDns = true;
               };
             };
@@ -190,6 +184,12 @@
               description = "Port for the local DNS server";
             };
 
+            announcePort = lib.mkOption {
+              type = lib.types.port;
+              default = 53535;
+              description = "Port for the local DNS server";
+            };
+
             setupDns = lib.mkOption {
               type = lib.types.bool;
               default = false;
@@ -233,7 +233,7 @@
                     then "$(cat ${cfg.passwordFile})"
                     else cfg.password;
                 in ''
-                  ${cfg.package}/bin/iroh-lan-dns --network ${cfg.network} --password ${passwordArg} --hostname ${cfg.hostName} --dns-port ${toString cfg.dnsPort}
+                  ${cfg.package}/bin/iroh-lan-dns --network ${cfg.network} --password ${passwordArg} --hostname ${cfg.hostName} --dns-port ${toString cfg.dnsPort} --announce-port ${toString cfg.announcePort}
                 '';
 
                 NoNewPrivileges = false;

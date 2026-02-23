@@ -23,6 +23,9 @@ struct Args {
 
     #[arg(long, default_value = "6666")]
     dns_port: u16,
+
+    #[arg(long, default_value = "53535")]
+    announce_port: u16,
 }
 
 #[tokio::main]
@@ -66,8 +69,8 @@ async fn main() -> Result<()> {
 
     sleep(Duration::from_millis(100)).await;
 
-    let sock = Arc::new(UdpSocket::bind((my_ip, 53535)).await?);
-    info!("Hostname exchange listening on {}:53535", my_ip);
+    let sock = Arc::new(UdpSocket::bind((my_ip, args.dns_port)).await?);
+    info!("Hostname exchange listening on {}:{}", my_ip, args.dns_port);
 
     // Listener: receive peer hostnames
     tokio::spawn({
@@ -107,7 +110,7 @@ async fn main() -> Result<()> {
                     Ok(peers) => {
                         for (_, maybe_ip) in &peers {
                             if let Some(peer_ip) = maybe_ip {
-                                let dest = std::net::SocketAddr::from((*peer_ip, 53535));
+                                let dest = std::net::SocketAddr::from((*peer_ip, args.announce_port));
                                 if let Err(e) = sock.send_to(hostname.as_bytes(), dest).await {
                                     debug!("Failed to announce to {}: {}", peer_ip, e);
                                 }
